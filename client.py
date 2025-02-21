@@ -210,23 +210,32 @@ def main_overlay():
     screen_width = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
     screen_height = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
     overlay_height = 12
+    overlay_width = 800  # Установите нужную ширину
+
+    # Вычисляем позицию для центрирования по горизонтали
+    x = (screen_width - overlay_width) // 2
+    y = screen_height - overlay_height
 
     # Основной цикл для восстановления оверлейного окна в случае ошибки
     while True:
         try:
             overlay_hwnd = win32gui.CreateWindowEx(
-                win32con.WS_EX_APPWINDOW,  # окно будет отображаться в Alt+Tab и на панели задач
+                win32con.WS_EX_TOOLWINDOW,  # скрывает иконку из панели задач
+                #win32con.WS_EX_APPWINDOW, # не скрывает иконку из панели задач
                 className,
                 "Overlay Window",
                 win32con.WS_POPUP | win32con.WS_VISIBLE,
-                0, screen_height - overlay_height,
-                screen_width, overlay_height,
+                x, y,  # Новые координаты
+                overlay_width, overlay_height,  # Новая ширина и высота
                 0, 0, hInstance, None)
 
-            win32gui.SetWindowPos(overlay_hwnd, win32con.HWND_TOPMOST,
-                                  0, screen_height - overlay_height,
-                                  screen_width, overlay_height, 0)
-
+            win32gui.SetWindowPos(
+                overlay_hwnd,
+                win32con.HWND_TOPMOST,
+                x, y,  # Обновленные координаты
+                overlay_width, overlay_height,  # Новая ширина и высота
+                0
+            )
             # Применяем прозрачность через DwmExtendFrameIntoClientArea
             dwmapi = ctypes.windll.dwmapi
             margins = MARGINS(-1, -1, -1, -1)
