@@ -6,11 +6,14 @@ import io
 import logging
 import requests
 import socket
+import ctypes
 
 logging.basicConfig(level=logging.DEBUG)
 
 current_id = None
 message_label = None
+root = None  # Глобальное окно приложения
+
 
 class RequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -57,10 +60,12 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b'Message received')
 
+
 def start_server():
     server = HTTPServer(('0.0.0.0', 5000), RequestHandler)
     logging.info("Клиентский сервер запущен на 0.0.0.0:5000")
     server.serve_forever()
+
 
 def get_client_url():
     """
@@ -71,11 +76,54 @@ def get_client_url():
     local_ip = socket.gethostbyname(hostname)
     return f'http://{local_ip}:5000'
 
+
 # URL регистрации у бота (измените на реальный адрес бота, если требуется)
 BOT_REGISTRATION_URL = 'http://127.0.0.1:8000/register_client'
 
+
+def transform_to_overlay():
+    """
+    Преобразует интерфейс регистрации в минималистичный оверлей с прозрачным фоном,
+    который закреплён поверх панели задач.
+    """
+    global root, message_label
+    # Удаляем все существующие виджеты (регистрационная форма)
+    for widget in root.winfo_children():
+        widget.destroy()
+    # Убираем рамку окна
+    root.overrideredirect(True)
+    # Окно всегда поверх остальных
+    root.attributes("-topmost", True)
+    # Задаём фон, который затем делаем прозрачным
+    transparent_color = "magenta"
+    root.config(bg=transparent_color)
+    root.wm_attributes("-transparentcolor", transparent_color)
+
+    # Создаем минимальный Label для отображения текста (без лишней информации)
+    message_label = tk.Label(root, text="Сообщений нет", font=("Segoe UI", 12), bg=transparent_color, fg="white")
+    message_label.pack(fill=tk.BOTH, expand=True)
+
+    # Определяем размеры экрана и позиционируем окно внизу экрана (на тонкой линии панели задач)
+    screen_width = root.winfo_screenwidth()
+    screen_height = root.winfo_screenheight()
+    new_width = screen_width
+    new_height = 30  # минимальная высота
+    x = 0
+    y = screen_height - new_height  # располагаем в самом низу
+
+    root.geometry(f"{new_width}x{new_height}+{x}+{y}")
+
+    # Принудительно устанавливаем окно поверх панели задач через Windows API
+    try:
+        hwnd = root.winfo_id()
+        HWND_TOPMOST = -1
+        ctypes.windll.user32.SetWindowPos(hwnd, HWND_TOPMOST, x, y, new_width, new_height, 0)
+    except Exception as e:
+        logging.error("Ошибка установки окна над панелью задач: " + str(e))
+
+
 def set_id():
-    global current_id
+    global current_id, root, status_label
     current_id = id_entry.get()
     status_label.config(text=f"ID установлен: {current_id}")
 
@@ -88,13 +136,16 @@ def set_id():
         )
         if response.status_code == 200:
             status_label.config(text=f"ID установлен и зарегистрирован: {current_id}")
+            # После успешной регистрации преобразуем GUI в минимальный оверлей
+            transform_to_overlay()
         else:
             status_label.config(text=f"Ошибка регистрации: {response.text}")
     except requests.exceptions.RequestException as e:
         status_label.config(text=f"Не удалось зарегистрироваться: {e}")
 
+
 def create_gui():
-    global id_entry, status_label, message_label
+    global root, id_entry, status_label, message_label
     root = tk.Tk()
     root.title("Helper Client")
     root.geometry("400x200")
@@ -108,16 +159,16 @@ def create_gui():
     status_label = tk.Label(root, text="ID не установлен")
     status_label.pack(pady=5)
 
-    message_label = tk.Label(root, text="Сообщений нет", wraplength=350)
-    message_label.pack(pady=10)
-
+    # message_label будет создан в режиме overlay после регистрации
     root.mainloop()
+
 
 def main():
     server_thread = threading.Thread(target=start_server)
     server_thread.daemon = True
     server_thread.start()
     create_gui()
+
 
 if __name__ == '__main__':
     main()
