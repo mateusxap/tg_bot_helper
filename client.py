@@ -209,13 +209,13 @@ def main_overlay():
 
     screen_width = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
     screen_height = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
-    overlay_height = 30
+    overlay_height = 12
 
     # Основной цикл для восстановления оверлейного окна в случае ошибки
     while True:
         try:
             overlay_hwnd = win32gui.CreateWindowEx(
-                win32con.WS_EX_TOOLWINDOW,  # скрывает иконку из панели задач
+                win32con.WS_EX_APPWINDOW,  # окно будет отображаться в Alt+Tab и на панели задач
                 className,
                 "Overlay Window",
                 win32con.WS_POPUP | win32con.WS_VISIBLE,
