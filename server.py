@@ -4,8 +4,11 @@ import threading
 import pyautogui
 import io
 import logging
+import requests
+import socket
 
-# Переменная для хранения уникального ID
+logging.basicConfig(level=logging.DEBUG)
+
 current_id = None
 message_label = None
 
@@ -25,14 +28,12 @@ class RequestHandler(BaseHTTPRequestHandler):
                 return
 
             try:
-                # Захватываем скриншот
                 logging.debug("Захватываем скриншот")
                 screenshot = pyautogui.screenshot()
                 img_io = io.BytesIO()
                 screenshot.save(img_io, 'PNG')
                 img_io.seek(0)
 
-                # Отправляем скриншот
                 logging.debug("Отправляем скриншот")
                 self.send_response(200)
                 self.send_header('Content-type', 'image/png')
@@ -47,7 +48,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if self.path == '/message':
-            content_length = int(self.headers['Content-Length'])
+            content_length = int(self.headers.get('Content-Length', 0))
             message = self.rfile.read(content_length).decode('utf-8')
             if message_label:
                 message_label.config(text=message)
@@ -57,25 +58,42 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.wfile.write(b'Message received')
 
 def start_server():
-    """
-    Запускает локальный HTTP-сервер для обработки запросов.
-    """
-    server = HTTPServer(('127.0.0.1', 5000), RequestHandler)
-    logging.info("Сервер запущен на 127.0.0.1:5000")
+    server = HTTPServer(('0.0.0.0', 5000), RequestHandler)
+    logging.info("Клиентский сервер запущен на 0.0.0.0:5000")
     server.serve_forever()
 
+def get_client_url():
+    """
+    Определяет локальный IP-адрес устройства.
+    Для продакшена рекомендуется использовать публичный IP или DDNS.
+    """
+    hostname = socket.gethostname()
+    local_ip = socket.gethostbyname(hostname)
+    return f'http://{local_ip}:5000'
+
+# URL регистрации у бота (измените на реальный адрес бота, если требуется)
+BOT_REGISTRATION_URL = 'http://127.0.0.1:8000/register_client'
+
 def set_id():
-    """
-    Устанавливает уникальный ID из текстового поля.
-    """
     global current_id
     current_id = id_entry.get()
     status_label.config(text=f"ID установлен: {current_id}")
 
+    client_url = get_client_url()
+    try:
+        response = requests.post(
+            BOT_REGISTRATION_URL,
+            json={'unique_id': current_id, 'client_url': client_url},
+            timeout=5
+        )
+        if response.status_code == 200:
+            status_label.config(text=f"ID установлен и зарегистрирован: {current_id}")
+        else:
+            status_label.config(text=f"Ошибка регистрации: {response.text}")
+    except requests.exceptions.RequestException as e:
+        status_label.config(text=f"Не удалось зарегистрироваться: {e}")
+
 def create_gui():
-    """
-    Создает простое GUI-приложение с вводом ID и отображением сообщений.
-    """
     global id_entry, status_label, message_label
     root = tk.Tk()
     root.title("Helper Client")
@@ -96,9 +114,6 @@ def create_gui():
     root.mainloop()
 
 def main():
-    """
-    Главная функция для запуска сервера и GUI.
-    """
     server_thread = threading.Thread(target=start_server)
     server_thread.daemon = True
     server_thread.start()
