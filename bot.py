@@ -1,26 +1,15 @@
 import telegram
-from telegram.ext import Application, CommandHandler, MessageHandler, filters  # Изменено Filters на filters
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
 import uuid
 import requests
 import time
 
-# Замените на ваш реальный токен от BotFather
 TOKEN = '7953381626:AAEoiJqZwSWY3atm5yS0V-UC6KLt-wruULk'
-
-# Адрес клиента
 CLIENT_URL = 'http://127.0.0.1:5000'
-
-# Словарь для хранения уникальных ID пользователей
 user_ids = {}
-
-# Словарь для отслеживания времени последнего запроса
 last_request_time = {}
 
 async def start(update, context):
-    """
-    Обработчик команды /start.
-    Генерирует и отправляет уникальный ID пользователю.
-    """
     chat_id = update.effective_chat.id
     unique_id = str(uuid.uuid4())
     user_ids[chat_id] = unique_id
@@ -28,10 +17,6 @@ async def start(update, context):
                                     'Введите этот ID в клиентское приложение.')
 
 async def screen(update, context):
-    """
-    Обработчик команды /screen.
-    Запрашивает скриншот с клиента и отправляет его в чат.
-    """
     chat_id = update.effective_chat.id
     current_time = time.time()
 
@@ -50,25 +35,17 @@ async def screen(update, context):
             await context.bot.send_photo(chat_id=chat_id, photo=response.content)
             last_request_time[chat_id] = current_time
         else:
-            await update.message.reply_text('Ошибка при запросе скриншота.')
-    except requests.exceptions.RequestException:
-        await update.message.reply_text('Не удалось подключиться к клиенту.')
+            await update.message.reply_text(f'Ошибка при запросе скриншота: {response.status_code}')
+    except requests.exceptions.RequestException as e:
+        await update.message.reply_text(f'Не удалось подключиться к клиенту: {str(e)}')
 
 async def help_command(update, context):
-    """
-    Обработчик команды /help.
-    Отображает справочную информацию о боте.
-    """
     await update.message.reply_text('Информация о боте:\n'
                                     '/start - Получить уникальный ID\n'
                                     '/screen - Запросить скриншот\n'
                                     '/help - Показать эту справку')
 
 async def handle_text(update, context):
-    """
-    Обработчик текстовых сообщений.
-    Отправляет текст клиенту для отображения.
-    """
     chat_id = update.effective_chat.id
     if chat_id not in user_ids:
         await update.message.reply_text('Сначала выполните команду /start.')
@@ -86,14 +63,10 @@ async def handle_text(update, context):
         await update.message.reply_text('Не удалось подключиться к клиенту.')
 
 def main():
-    """
-    Главная функция для настройки и запуска бота.
-    """
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler('start', start))
     application.add_handler(CommandHandler('screen', screen))
     application.add_handler(CommandHandler('help', help_command))
-    # Изменено Filters.text & ~Filters.command на filters.TEXT & ~filters.COMMAND
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     application.run_polling()
 
