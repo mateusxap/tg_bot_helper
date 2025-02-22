@@ -191,7 +191,8 @@ def wndProc(hWnd, msg, wParam, lParam):
         # Выбираем шрифт в контекст устройства
         old_font = win32gui.SelectObject(hdc, hfont)
 
-        flags = win32con.DT_CENTER | win32con.DT_VCENTER | win32con.DT_SINGLELINE
+        # Убираем DT_SINGLELINE и добавляем DT_WORDBREAK для переноса строк
+        flags = win32con.DT_CENTER | win32con.DT_WORDBREAK
         win32gui.DrawText(hdc, current_message, -1, rect, flags)
 
         # Восстанавливаем старый шрифт и удаляем созданный
@@ -240,7 +241,7 @@ def main_overlay():
 
     screen_width = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
     screen_height = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
-    overlay_height = 40
+    overlay_height = 45
     overlay_width = 1000  # установите нужную ширину
 
     x = (screen_width - overlay_width) // 2
