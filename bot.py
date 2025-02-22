@@ -5,24 +5,29 @@ import requests
 import json
 import logging
 from http.server import BaseHTTPRequestHandler, HTTPServer
+import socket
 
 from telegram import ReplyKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
+# Токен бота
 TOKEN = '7953381626:AAEoiJqZwSWY3atm5yS0V-UC6KLt-wruULk'
 
 # Словари для хранения данных
-user_ids = {}          # chat_id -> unique_id
+user_ids = {}          # chat_id -> unique_id (фиксированный, 8 символов)
 last_request_time = {} # chat_id -> время последнего запроса
 client_mapping = {}    # unique_id -> client_url
 
-# Определение клавиатуры с кнопками
+# Определяем клавиатуру с кнопками
 KEYBOARD = ReplyKeyboardMarkup(
     [['/start', '/screen', '/help']],
     resize_keyboard=True,
     one_time_keyboard=False
 )
 
+########################################
+# HTTP-сервер для регистрации клиентов
+########################################
 class RegistrationHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == '/register_client':
@@ -65,32 +70,29 @@ threading.Thread(target=run_registration_server, daemon=True).start()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    unique_id = str(uuid.uuid4())
+    # Фиксированный ID: берем последние 8 символов chat_id
+    unique_id = str(chat_id)[-8:]
     user_ids[chat_id] = unique_id
     await update.message.reply_text(
         f'Ваш уникальный ID: {unique_id}\n'
-        'Введите этот ID в клиентское приложение.\nПосле можете писать сообщения',
-        reply_markup=KEYBOARD  # Добавляем клавиатуру
+        'Введите этот ID в клиентское приложение.\nПосле этого можете писать сообщения',
+        reply_markup=KEYBOARD
     )
 
 async def screen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     current_time = time.time()
-
     if chat_id in last_request_time and (current_time - last_request_time[chat_id] < 0.5):
         await update.message.reply_text('Подождите перед следующим запросом.', reply_markup=KEYBOARD)
         return
-
     if chat_id not in user_ids:
         await update.message.reply_text('Сначала выполните команду /start.', reply_markup=KEYBOARD)
         return
-
     unique_id = user_ids[chat_id]
     client_url = client_mapping.get(unique_id)
     if not client_url:
         await update.message.reply_text('Клиент не зарегистрирован.', reply_markup=KEYBOARD)
         return
-
     try:
         response = requests.get(f'{client_url}/screenshot/{unique_id}', timeout=5)
         if response.status_code == 200:
@@ -115,13 +117,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat_id not in user_ids:
         await update.message.reply_text('Сначала выполните команду /start.', reply_markup=KEYBOARD)
         return
-
     unique_id = user_ids[chat_id]
     client_url = client_mapping.get(unique_id)
     if not client_url:
         await update.message.reply_text('Клиент не зарегистрирован.', reply_markup=KEYBOARD)
         return
-
     text = update.message.text
     try:
         response = requests.post(f'{client_url}/message', data=text.encode('utf-8'), timeout=5)
@@ -132,13 +132,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except requests.exceptions.RequestException:
         await update.message.reply_text('Не удалось подключиться к клиенту.', reply_markup=KEYBOARD)
 
-def main():
+def main_bot():
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler('start', start))
     application.add_handler(CommandHandler('screen', screen))
     application.add_handler(CommandHandler('help', help_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     application.run_polling()
+
+def main():
+    main_bot()
 
 if __name__ == '__main__':
     main()
