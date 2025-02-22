@@ -264,7 +264,7 @@ def main_overlay():
                 screen_width, overlay_height,
                 0, 0, hInstance, None
             )
-#
+
             win32gui.SetWindowPos(overlay_hwnd, win32con.HWND_TOPMOST,
                                   0, screen_height - overlay_height,
                                   screen_width, overlay_height, 0)
