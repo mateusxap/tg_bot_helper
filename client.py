@@ -1,6 +1,7 @@
 import win32gui
 import win32con
 import win32api
+import win32console
 import ctypes
 from ctypes import Structure, byref, c_int
 import threading
@@ -18,7 +19,7 @@ logging.basicConfig(level=logging.DEBUG)
 
 # Глобальные переменные
 current_id = None         # введённый ID
-current_message = "Сообщений нет"  # текст, который будет отображаться в оверлее
+current_message = ""  # текст, который будет отображаться в оверлее
 overlay_hwnd = None       # дескриптор оверлейного окна
 root = None               # окно Tkinter для ввода ID
 
@@ -296,18 +297,22 @@ def main_overlay():
             logging.error(f"Ошибка оверлейного окна: {e}")
             time.sleep(1)  # Задержка перед повторной попыткой
 
+def hide_console():
+    """Скрывает консольное окно."""
+    try:
+        console_window = win32console.GetConsoleWindow()
+        if console_window:
+            win32gui.ShowWindow(console_window, win32con.SW_HIDE)
+    except Exception as e:
+        logging.error(f"Ошибка при скрытии консоли: {e}")
+
 def main():
-    # Запускаем HTTP-сервер в отдельном потоке
     threading.Thread(target=start_server, daemon=True).start()
-
-    # Запускаем окно для ввода ID (Tkinter)
+    hide_console()  # Скрываем консоль сразу после запуска
     create_gui()
-
     if not current_id:
         print("ID не задан. Выход.")
         return
-
-    # После ввода ID запускаем оверлейное окно
     main_overlay()
 
 if __name__ == '__main__':
