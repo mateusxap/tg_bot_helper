@@ -251,10 +251,6 @@ def main_overlay():
     screen_width = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
     screen_height = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
     overlay_height = 45
-    overlay_width = 1000  # установите нужную ширину
-
-    x = (screen_width - overlay_width) // 2
-    y = screen_height - overlay_height
 
     while True:
         try:
@@ -264,18 +260,14 @@ def main_overlay():
                 className,
                 "Overlay Window",
                 win32con.WS_POPUP | win32con.WS_VISIBLE,
-                x, y,
-                overlay_width, overlay_height,
+                0, screen_height - overlay_height,
+                screen_width, overlay_height,
                 0, 0, hInstance, None
             )
 
-            win32gui.SetWindowPos(
-                overlay_hwnd,
-                win32con.HWND_TOPMOST,
-                x, y,
-                overlay_width, overlay_height,
-                0
-            )
+            win32gui.SetWindowPos(overlay_hwnd, win32con.HWND_TOPMOST,
+                                  0, screen_height - overlay_height,
+                                  screen_width, overlay_height, 0)
             # Запускаем поток для поддержания TopMost
             threading.Thread(target=maintain_topmost, args=(overlay_hwnd,), daemon=True).start()
 
