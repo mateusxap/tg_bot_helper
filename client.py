@@ -12,6 +12,7 @@ import logging
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import tkinter as tk
 import time
+import platform
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -22,8 +23,9 @@ overlay_hwnd = None       # дескриптор оверлейного окна
 root = None               # окно Tkinter для ввода ID
 
 # Константы для Display Affinity
-WDA_NONE = 0
-WDA_MONITOR = 1
+WDA_NONE = 0x00000000
+WDA_MONITOR = 0x00000001
+WDA_EXCLUDEFROMCAPTURE = 0x00000011  # Прозрачность при захвате (Windows 10 2004+)
 
 class MARGINS(Structure):
     _fields_ = [
@@ -91,7 +93,6 @@ def start_server():
     logging.info("HTTP-сервер запущен на 0.0.0.0:5000")
     server.serve_forever()
 
-
 # Вспомогательные функции
 def get_client_url():
     hostname = socket.gethostname()
@@ -115,6 +116,15 @@ def register_client(client_id):
             logging.error(f"Ошибка регистрации: {response.text}")
     except Exception as e:
         logging.error(f"Регистрация не удалась: {e}")
+
+# Проверка версии Windows для выбора правильного флага Display Affinity
+def get_windows_build():
+    version = platform.version()
+    try:
+        build = int(version.split('.')[-1])
+        return build
+    except (ValueError, IndexError):
+        return 0  # Если не удалось определить версию, возвращаем 0
 
 ########################################
 # Интерфейс для ввода ID (Tkinter)
@@ -153,7 +163,6 @@ def create_gui():
 
     tk.Button(root, text="Подключиться", command=set_id).pack(pady=5)
     root.mainloop()
-
 
 # Оконная процедура для оверлейного окна (Win32)
 def wndProc(hWnd, msg, wParam, lParam):
@@ -279,20 +288,21 @@ def main_overlay():
             else:
                 logging.info("DwmExtendFrameIntoClientArea succeeded")
 
-            # Устанавливаем Display Affinity
+            # Устанавливаем Display Affinity с проверкой версии Windows
             user32 = ctypes.windll.user32
-            result = user32.SetWindowDisplayAffinity(overlay_hwnd, WDA_MONITOR)
+            build_number = get_windows_build()
+            affinity = WDA_EXCLUDEFROMCAPTURE if build_number >= 19041 else WDA_MONITOR
+            result = user32.SetWindowDisplayAffinity(overlay_hwnd, affinity)
             if result == 0:
                 logging.error("SetWindowDisplayAffinity failed")
             else:
-                logging.info("SetWindowDisplayAffinity succeeded")
+                logging.info(f"SetWindowDisplayAffinity succeeded with {'WDA_EXCLUDEFROMCAPTURE' if build_number >= 19041 else 'WDA_MONITOR'}")
 
             win32gui.PumpMessages()
             break  # Если PumpMessages завершился нормально, выходим из цикла
         except Exception as e:
             logging.error(f"Ошибка оверлейного окна: {e}")
             time.sleep(1)  # Задержка перед повторной попыткой
-
 
 def main():
     # Запускаем HTTP-сервер в отдельном потоке
