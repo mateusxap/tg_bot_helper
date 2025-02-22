@@ -13,7 +13,6 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import tkinter as tk
 import time
 
-# Настройка логирования
 logging.basicConfig(level=logging.DEBUG)
 
 # Глобальные переменные
@@ -26,7 +25,6 @@ root = None               # окно Tkinter для ввода ID
 WDA_NONE = 0
 WDA_MONITOR = 1
 
-# Структура для DwmExtendFrameIntoClientArea (эффект стекла)
 class MARGINS(Structure):
     _fields_ = [
         ("cxLeftWidth", c_int),
@@ -35,9 +33,7 @@ class MARGINS(Structure):
         ("cyBottomHeight", c_int)
     ]
 
-########################################
 # HTTP-сервер: обработчик запросов
-########################################
 class RequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         global current_id
@@ -81,7 +77,6 @@ class RequestHandler(BaseHTTPRequestHandler):
             logging.debug(f"Получено сообщение: {message}")
             current_message = message  # обновляем текст оверлея
             if overlay_hwnd:
-                # Полная перерисовка окна для предотвращения наложения текста
                 win32gui.RedrawWindow(overlay_hwnd, None, None, win32con.RDW_INVALIDATE | win32con.RDW_UPDATENOW)
             self.send_response(200)
             self.send_header('Content-type', 'text/plain')
@@ -96,9 +91,8 @@ def start_server():
     logging.info("HTTP-сервер запущен на 0.0.0.0:5000")
     server.serve_forever()
 
-########################################
+
 # Вспомогательные функции
-########################################
 def get_client_url():
     hostname = socket.gethostname()
     local_ip = socket.gethostbyname(hostname)
@@ -151,7 +145,7 @@ def create_gui():
             )
             if response.status_code == 200:
                 status_label.config(text=f"ID установлен и зарегистрирован: {current_id}")
-                root.destroy()  # Закрываем окно ввода после успешной регистрации
+                root.destroy()
             else:
                 status_label.config(text=f"Ошибка регистрации: {response.text}")
         except requests.exceptions.RequestException as e:
@@ -160,9 +154,7 @@ def create_gui():
     tk.Button(root, text="Подключиться", command=set_id).pack(pady=5)
     root.mainloop()
 
-########################################
 # Оконная процедура для оверлейного окна (Win32)
-########################################
 def wndProc(hWnd, msg, wParam, lParam):
     global current_message
     if msg == win32con.WM_ERASEBKGND:
@@ -171,7 +163,6 @@ def wndProc(hWnd, msg, wParam, lParam):
     elif msg == win32con.WM_PAINT:
         hdc, ps = win32gui.BeginPaint(hWnd)
         rect = win32gui.GetClientRect(hWnd)
-        # Заполняем фон сплошным цветом для очистки предыдущего содержимого
         brush = win32gui.CreateSolidBrush(win32api.RGB(0, 0, 0))
         win32gui.FillRect(hdc, rect, brush)
         win32gui.DeleteObject(brush)
@@ -187,9 +178,22 @@ def wndProc(hWnd, msg, wParam, lParam):
     else:
         return win32gui.DefWindowProc(hWnd, msg, wParam, lParam)
 
-########################################
+# Функция для периодического поддержания TopMost
+def maintain_topmost(hwnd):
+    """Периодически переустанавливает окно на topmost."""
+    while True:
+        try:
+            win32gui.SetWindowPos(
+                hwnd,
+                win32con.HWND_TOPMOST,
+                0, 0, 0, 0,
+                win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE
+            )
+        except Exception as e:
+            logging.error(f"Ошибка поддержания topmost: {e}")
+        time.sleep(0.1)  # каждые 100 мс
+
 # Функция создания оверлейного окна (Win32)
-########################################
 def main_overlay():
     global overlay_hwnd
     hInstance = win32api.GetModuleHandle(None)
@@ -199,7 +203,6 @@ def main_overlay():
     wc.lpszClassName = className
     wc.lpfnWndProc = wndProc
     wc.hCursor = win32gui.LoadCursor(0, win32con.IDC_ARROW)
-    # Фон не задаём – очистка будет выполняться вручную
     wc.hbrBackground = 0
     try:
         atom = win32gui.RegisterClass(wc)
@@ -210,32 +213,34 @@ def main_overlay():
     screen_width = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
     screen_height = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
     overlay_height = 12
-    overlay_width = 800  # Установите нужную ширину
+    overlay_width = 800  # установите нужную ширину
 
-    # Вычисляем позицию для центрирования по горизонтали
     x = (screen_width - overlay_width) // 2
     y = screen_height - overlay_height
 
-    # Основной цикл для восстановления оверлейного окна в случае ошибки
     while True:
         try:
+            # Добавлен флаг WS_EX_NOACTIVATE для предотвращения получения фокуса
             overlay_hwnd = win32gui.CreateWindowEx(
-                win32con.WS_EX_TOOLWINDOW,  # скрывает иконку из панели задач
-                #win32con.WS_EX_APPWINDOW, # не скрывает иконку из панели задач
+                win32con.WS_EX_TOOLWINDOW | win32con.WS_EX_NOACTIVATE,
                 className,
                 "Overlay Window",
                 win32con.WS_POPUP | win32con.WS_VISIBLE,
-                x, y,  # Новые координаты
-                overlay_width, overlay_height,  # Новая ширина и высота
-                0, 0, hInstance, None)
+                x, y,
+                overlay_width, overlay_height,
+                0, 0, hInstance, None
+            )
 
             win32gui.SetWindowPos(
                 overlay_hwnd,
                 win32con.HWND_TOPMOST,
-                x, y,  # Обновленные координаты
-                overlay_width, overlay_height,  # Новая ширина и высота
+                x, y,
+                overlay_width, overlay_height,
                 0
             )
+            # Запускаем поток для поддержания TopMost
+            threading.Thread(target=maintain_topmost, args=(overlay_hwnd,), daemon=True).start()
+
             # Применяем прозрачность через DwmExtendFrameIntoClientArea
             dwmapi = ctypes.windll.dwmapi
             margins = MARGINS(-1, -1, -1, -1)
@@ -257,11 +262,9 @@ def main_overlay():
             break  # Если PumpMessages завершился нормально, выходим из цикла
         except Exception as e:
             logging.error(f"Ошибка оверлейного окна: {e}")
-            time.sleep(1)  # Задержка перед попыткой восстановления окна
+            time.sleep(1)  # Задержка перед повторной попыткой
 
-########################################
-# Основная функция
-########################################
+
 def main():
     # Запускаем HTTP-сервер в отдельном потоке
     threading.Thread(target=start_server, daemon=True).start()

@@ -19,8 +19,8 @@ client_mapping = {}    # unique_id -> client_url
 # Определение клавиатуры с кнопками
 KEYBOARD = ReplyKeyboardMarkup(
     [['/start', '/screen', '/help']],
-    resize_keyboard=True,  # Уменьшает размер клавиатуры для удобства
-    one_time_keyboard=False  # Клавиатура будет постоянной, а не исчезать после нажатия
+    resize_keyboard=True,
+    one_time_keyboard=False
 )
 
 class RegistrationHandler(BaseHTTPRequestHandler):
@@ -107,7 +107,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         '/start - Получить уникальный ID\n'
         '/screen - Запросить скриншот\n'
         '/help - Показать эту справку',
-        reply_markup=KEYBOARD  # Добавляем клавиатуру
+        reply_markup=KEYBOARD
     )
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
