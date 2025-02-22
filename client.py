@@ -154,11 +154,11 @@ def create_gui():
     tk.Button(root, text="Подключиться", command=set_id).pack(pady=5)
     root.mainloop()
 
+
 # Оконная процедура для оверлейного окна (Win32)
 def wndProc(hWnd, msg, wParam, lParam):
     global current_message
     if msg == win32con.WM_ERASEBKGND:
-        # Возвращаем 1, чтобы предотвратить стандартную очистку фона и избежать наложения текста
         return 1
     elif msg == win32con.WM_PAINT:
         hdc, ps = win32gui.BeginPaint(hWnd)
@@ -168,8 +168,36 @@ def wndProc(hWnd, msg, wParam, lParam):
         win32gui.DeleteObject(brush)
         win32gui.SetTextColor(hdc, win32api.RGB(255, 255, 255))  # белый текст
         win32gui.SetBkMode(hdc, win32con.TRANSPARENT)
+
+        # Создаем шрифт через ctypes, используя Windows API CreateFontW
+        font_size = 25  # Установите желаемый размер шрифта в пунктах
+        hfont = ctypes.windll.gdi32.CreateFontW(
+            font_size,  # высота шрифта
+            0,  # ширина (0 = автоматическая)
+            0,  # угол наклона
+            0,  # угол наклона базовой линии
+            win32con.FW_NORMAL,  # вес шрифта (толщина)
+            False,  # курсив
+            False,  # подчеркивание
+            False,  # зачеркнутый
+            win32con.ANSI_CHARSET,  # набор символов
+            win32con.OUT_DEFAULT_PRECIS,  # точность вывода
+            win32con.CLIP_DEFAULT_PRECIS,  # точность обрезки
+            win32con.DEFAULT_QUALITY,  # качество
+            win32con.DEFAULT_PITCH | win32con.FF_DONTCARE,  # шаг и семейство
+            "Arial"  # имя шрифта
+        )
+
+        # Выбираем шрифт в контекст устройства
+        old_font = win32gui.SelectObject(hdc, hfont)
+
         flags = win32con.DT_CENTER | win32con.DT_VCENTER | win32con.DT_SINGLELINE
         win32gui.DrawText(hdc, current_message, -1, rect, flags)
+
+        # Восстанавливаем старый шрифт и удаляем созданный
+        win32gui.SelectObject(hdc, old_font)
+        ctypes.windll.gdi32.DeleteObject(hfont)
+
         win32gui.EndPaint(hWnd, ps)
         return 0
     elif msg == win32con.WM_DESTROY:
@@ -212,8 +240,8 @@ def main_overlay():
 
     screen_width = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
     screen_height = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
-    overlay_height = 12
-    overlay_width = 800  # установите нужную ширину
+    overlay_height = 40
+    overlay_width = 1000  # установите нужную ширину
 
     x = (screen_width - overlay_width) // 2
     y = screen_height - overlay_height
