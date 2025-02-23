@@ -110,7 +110,7 @@ def get_client_url():
 
 # URL регистрации у бота
 # !!! При запуске на сервере: изменить URL на публичный (например, http://<ваш_public_ip>:8000/register_client)
-BOT_REGISTRATION_URL = 'http://127.0.0.1:8000/register_client'
+BOT_REGISTRATION_URL = 'http://87.242.119.104:8000/register_client'
 
 def register_client(client_id):
     client_url = get_client_url()
@@ -170,7 +170,7 @@ def create_gui():
 ########################################
 async def ws_client():
     # !!! При запуске на сервере: изменить URL на ws://<ваш_public_ip>:8765
-    ws_url = "ws://127.0.0.1:8765"
+    ws_url = "ws://87.242.119.104:8765"
     while True:
         try:
             async with websockets.connect(ws_url) as websocket:
