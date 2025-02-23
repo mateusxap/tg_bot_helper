@@ -75,7 +75,6 @@ class RegistrationHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
-
 def run_registration_server():
     # !!! Для удаленного сервера: при необходимости измените IP и порт
     server_address = ('0.0.0.0', 8000)
@@ -83,10 +82,8 @@ def run_registration_server():
     logging.info("Регистрационный сервер запущен на 0.0.0.0:8000")
     httpd.serve_forever()
 
-
 # Запуск HTTP-сервера в отдельном потоке
 threading.Thread(target=run_registration_server, daemon=True).start()
-
 
 ########################################
 # WebSocket-сервер для установления постоянного соединения с клиентами
@@ -128,13 +125,25 @@ async def ws_handler(websocket, path=None):
                 logging.info(f"Клиент отключен: {uid}")
                 break
 
-
 async def start_websocket_server():
     # !!! Для удаленного сервера: при необходимости измените host и port
     ws_server = await websockets.serve(ws_handler, '0.0.0.0', 8765)
     logging.info("Сервер запущен на 0.0.0.0:8765")
     return ws_server
 
+########################################
+# Вспомогательная функция для автоматической регистрации
+########################################
+async def ensure_registration(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    if chat_id not in user_ids:
+        unique_id = str(chat_id)[-8:]
+        user_ids[chat_id] = unique_id
+        await update.message.reply_text(
+            f"Вы были автоматически зарегистрированы. Ваш уникальный ID: {unique_id}",
+            reply_markup=KEYBOARD
+        )
+    return user_ids[chat_id]
 
 ########################################
 # Команды Telegram бота
@@ -144,22 +153,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     unique_id = str(chat_id)[-8:]
     user_ids[chat_id] = unique_id
     await update.message.reply_text(
-        f'Ваш уникальный ID: {unique_id}\n'
-        'Введите этот ID в клиентское приложение.\nПосле этого можете писать сообщения',
+        f"Ваш уникальный ID: {unique_id}\n"
+        "Введите этот ID в клиентское приложение.\nПосле этого можете писать сообщения",
         reply_markup=KEYBOARD
     )
-
 
 async def screen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     current_time = time.time()
     if chat_id in last_request_time and (current_time - last_request_time[chat_id] < 0.5):
-        await update.message.reply_text('Подождите перед следующим запросом.', reply_markup=KEYBOARD)
+        await update.message.reply_text("Подождите перед следующим запросом.", reply_markup=KEYBOARD)
         return
-    if chat_id not in user_ids:
-        await update.message.reply_text('Сначала выполните команду /start.', reply_markup=KEYBOARD)
-        return
-    unique_id = user_ids[chat_id]
+    unique_id = await ensure_registration(update, context)
     ws = ws_connections.get(unique_id)
     if ws:
         try:
@@ -176,7 +181,7 @@ async def screen(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 await update.message.reply_text("Неверный формат данных скриншота.", reply_markup=KEYBOARD)
         except Exception as e:
-            await update.message.reply_text(f'Ошибка при запросе скриншота: {str(e)}', reply_markup=KEYBOARD)
+            await update.message.reply_text(f"Ошибка при запросе скриншота: {str(e)}", reply_markup=KEYBOARD)
         finally:
             if unique_id in screenshot_futures:
                 del screenshot_futures[unique_id]
@@ -184,68 +189,61 @@ async def screen(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Fallback на HTTP-запрос, если WebSocket не установлен
         client_url = client_mapping.get(unique_id)
         if not client_url:
-            await update.message.reply_text('Клиент не зарегистрирован.', reply_markup=KEYBOARD)
+            await update.message.reply_text("Клиент не зарегистрирован.", reply_markup=KEYBOARD)
             return
         try:
-            response = requests.get(f'{client_url}/screenshot/{unique_id}', timeout=5)
+            response = requests.get(f"{client_url}/screenshot/{unique_id}", timeout=5)
             if response.status_code == 200:
                 await context.bot.send_photo(chat_id=chat_id, photo=response.content)
                 last_request_time[chat_id] = current_time
             else:
-                await update.message.reply_text(f'Ошибка при запросе скриншота: {response.status_code}', reply_markup=KEYBOARD)
+                await update.message.reply_text(f"Ошибка при запросе скриншота: {response.status_code}", reply_markup=KEYBOARD)
         except requests.exceptions.RequestException as e:
-            await update.message.reply_text(f'Не удалось подключиться к клиенту: {str(e)}', reply_markup=KEYBOARD)
-
+            await update.message.reply_text(f"Не удалось подключиться к клиенту: {str(e)}", reply_markup=KEYBOARD)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        'Информация о боте:\n'
-        '/start - Получить уникальный ID\n'
-        '/screen - Запросить скриншот\n'
-        '/reset - Сбросить текст для всех активных ID (требуется пароль админа)\n'
-        '/help - Показать эту справку',
+        "Информация о боте:\n"
+        "/start - Получить уникальный ID\n"
+        "/screen - Запросить скриншот\n"
+        "/reset - Сбросить текст для всех активных ID (требуется пароль админа)\n"
+        "/help - Показать эту справку",
         reply_markup=KEYBOARD
     )
 
-
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    if chat_id not in user_ids:
-        await update.message.reply_text('Сначала выполните команду /start.', reply_markup=KEYBOARD)
-        return
-    unique_id = user_ids[chat_id]
+    unique_id = await ensure_registration(update, context)
     ws = ws_connections.get(unique_id)
     text = update.message.text
     if ws:
         try:
             command = {"action": "message", "text": text, "unique_id": unique_id}
             await ws.send(json.dumps(command))
-            await update.message.reply_text('Текст отправлен клиенту.', reply_markup=KEYBOARD)
+            await update.message.reply_text("Текст отправлен клиенту.", reply_markup=KEYBOARD)
         except Exception as e:
-            await update.message.reply_text(f'Ошибка при отправке текста: {str(e)}', reply_markup=KEYBOARD)
+            await update.message.reply_text(f"Ошибка при отправке текста: {str(e)}", reply_markup=KEYBOARD)
     else:
         client_url = client_mapping.get(unique_id)
         if not client_url:
-            await update.message.reply_text('Клиент не зарегистрирован.', reply_markup=KEYBOARD)
+            await update.message.reply_text("Клиент не зарегистрирован.", reply_markup=KEYBOARD)
             return
         try:
-            response = requests.post(f'{client_url}/message', data=text.encode('utf-8'), timeout=5)
+            response = requests.post(f"{client_url}/message", data=text.encode("utf-8"), timeout=5)
             if response.status_code == 200:
-                await update.message.reply_text('Текст отправлен клиенту.', reply_markup=KEYBOARD)
+                await update.message.reply_text("Текст отправлен клиенту.", reply_markup=KEYBOARD)
             else:
-                await update.message.reply_text('Ошибка при отправке текста.', reply_markup=KEYBOARD)
+                await update.message.reply_text("Ошибка при отправке текста.", reply_markup=KEYBOARD)
         except requests.exceptions.RequestException:
-            await update.message.reply_text('Не удалось подключиться к клиенту.', reply_markup=KEYBOARD)
-
+            await update.message.reply_text("Не удалось подключиться к клиенту.", reply_markup=KEYBOARD)
 
 # Обработчики для команды /reset
 async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        'Пожалуйста, введите пароль администратора:',
+        "Пожалуйста, введите пароль администратора:",
         reply_markup=ReplyKeyboardMarkup([['/cancel']], resize_keyboard=True)
     )
     return PASSWORD
-
 
 async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     password = update.message.text
@@ -263,7 +261,7 @@ async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     failed_resets += 1
             else:
                 try:
-                    response = requests.post(f'{client_url}/message', data="".encode('utf-8'), timeout=5)
+                    response = requests.post(f"{client_url}/message", data="".encode("utf-8"), timeout=5)
                     if response.status_code == 200:
                         successful_resets += 1
                     else:
@@ -272,26 +270,16 @@ async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     failed_resets += 1
 
         await update.message.reply_text(
-            f'Сброс выполнен.\n'
-            f'Успешно: {successful_resets}\n'
-            f'Не удалось: {failed_resets}',
+            f"Сброс выполнен.\nУспешно: {successful_resets}\nНе удалось: {failed_resets}",
             reply_markup=KEYBOARD
         )
     else:
-        await update.message.reply_text(
-            'Неверный пароль!',
-            reply_markup=KEYBOARD
-        )
+        await update.message.reply_text("Неверный пароль!", reply_markup=KEYBOARD)
     return ConversationHandler.END
-
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        'Операция отменена.',
-        reply_markup=KEYBOARD
-    )
+    await update.message.reply_text("Операция отменена.", reply_markup=KEYBOARD)
     return ConversationHandler.END
-
 
 ########################################
 # Основная функция бота
@@ -301,16 +289,16 @@ async def main_bot():
 
     # Добавляем ConversationHandler для команды /reset
     reset_handler = ConversationHandler(
-        entry_points=[CommandHandler('reset', reset)],
+        entry_points=[CommandHandler("reset", reset)],
         states={
             PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, check_password)]
         },
-        fallbacks=[CommandHandler('cancel', cancel)]
+        fallbacks=[CommandHandler("cancel", cancel)]
     )
 
-    application.add_handler(CommandHandler('start', start))
-    application.add_handler(CommandHandler('screen', screen))
-    application.add_handler(CommandHandler('help', help_command))
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("screen", screen))
+    application.add_handler(CommandHandler("help", help_command))
     application.add_handler(reset_handler)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
@@ -319,7 +307,6 @@ async def main_bot():
 
     # Запускаем Telegram-бота; run_polling блокирует выполнение, поэтому WebSocket уже запущен
     await application.run_polling()
-
 
 ########################################
 # Точка входа
@@ -330,7 +317,6 @@ def main():
     nest_asyncio.apply()
     loop = asyncio.get_event_loop()
     loop.run_until_complete(main_bot())
-
 
 if __name__ == '__main__':
     main()
