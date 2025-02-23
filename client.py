@@ -14,12 +14,15 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import tkinter as tk
 import time
 import platform
+import json
+import asyncio
+import websockets  # Убедитесь, что установлен модуль websockets (pip install websockets)
 
 logging.basicConfig(level=logging.DEBUG)
 
 # Глобальные переменные
 current_id = None         # введённый ID
-current_message = ""  # текст, который будет отображаться в оверлее
+current_message = ""      # текст, который будет отображаться в оверлее
 overlay_hwnd = None       # дескриптор оверлейного окна
 root = None               # окно Tkinter для ввода ID
 
@@ -36,7 +39,9 @@ class MARGINS(Structure):
         ("cyBottomHeight", c_int)
     ]
 
+########################################
 # HTTP-сервер: обработчик запросов
+########################################
 class RequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         global current_id
@@ -90,17 +95,21 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
 def start_server():
+    # !!! При запуске на сервере: при необходимости измените IP и порт
     server = HTTPServer(('0.0.0.0', 5000), RequestHandler)
     logging.info("HTTP-сервер запущен на 0.0.0.0:5000")
     server.serve_forever()
 
+########################################
 # Вспомогательные функции
+########################################
 def get_client_url():
     hostname = socket.gethostname()
     local_ip = socket.gethostbyname(hostname)
     return f'http://{local_ip}:5000'
 
-# URL регистрации у бота (при необходимости измените)
+# URL регистрации у бота
+# !!! При запуске на сервере: изменить URL на публичный (например, http://<ваш_public_ip>:8000/register_client)
 BOT_REGISTRATION_URL = 'http://127.0.0.1:8000/register_client'
 
 def register_client(client_id):
@@ -117,15 +126,6 @@ def register_client(client_id):
             logging.error(f"Ошибка регистрации: {response.text}")
     except Exception as e:
         logging.error(f"Регистрация не удалась: {e}")
-
-# Проверка версии Windows для выбора правильного флага Display Affinity
-def get_windows_build():
-    version = platform.version()
-    try:
-        build = int(version.split('.')[-1])
-        return build
-    except (ValueError, IndexError):
-        return 0  # Если не удалось определить версию, возвращаем 0
 
 ########################################
 # Интерфейс для ввода ID (Tkinter)
@@ -165,7 +165,58 @@ def create_gui():
     tk.Button(root, text="Подключиться", command=set_id).pack(pady=5)
     root.mainloop()
 
+########################################
+# WebSocket клиент для связи с ботом
+########################################
+async def ws_client():
+    # !!! При запуске на сервере: изменить URL на ws://<ваш_public_ip>:8765
+    ws_url = "ws://127.0.0.1:8765"
+    while True:
+        try:
+            async with websockets.connect(ws_url) as websocket:
+                # Отправляем unique_id сразу после подключения
+                await websocket.send(json.dumps({"unique_id": current_id}))
+                logging.info("WebSocket соединение установлено с сервером.")
+                while True:
+                    message = await websocket.recv()
+                    try:
+                        command = json.loads(message)
+                        action = command.get("action")
+                        if action == "screenshot":
+                            logging.info("Получена команда на скриншот через WebSocket.")
+                            # Захватываем скриншот
+                            screenshot = pyautogui.screenshot()
+                            img_io = io.BytesIO()
+                            screenshot.save(img_io, format="PNG")
+                            img_bytes = img_io.getvalue()
+                            # Отправляем бинарные данные (PNG)
+                            await websocket.send(img_bytes)
+                        elif action == "message":
+                            text = command.get("text", "")
+                            logging.info(f"Получено сообщение через WebSocket: {text}")
+                            global current_message
+                            current_message = text
+                            if overlay_hwnd:
+                                win32gui.RedrawWindow(overlay_hwnd, None, None, win32con.RDW_INVALIDATE | win32con.RDW_UPDATENOW)
+                        elif action == "reset":
+                            logging.info("Получен сброс через WebSocket.")
+                            current_message = ""
+                            if overlay_hwnd:
+                                win32gui.RedrawWindow(overlay_hwnd, None, None, win32con.RDW_INVALIDATE | win32con.RDW_UPDATENOW)
+                        else:
+                            logging.warning(f"Неизвестная команда через WebSocket: {command}")
+                    except Exception as e:
+                        logging.error(f"Ошибка обработки сообщения WebSocket: {e}")
+        except Exception as e:
+            logging.error(f"Ошибка подключения WebSocket: {e}. Переподключение через 5 секунд...")
+            await asyncio.sleep(5)
+
+def start_ws_client_thread():
+    asyncio.run(ws_client())
+
+########################################
 # Оконная процедура для оверлейного окна (Win32)
+########################################
 def wndProc(hWnd, msg, wParam, lParam):
     global current_message
     if msg == win32con.WM_ERASEBKGND:
@@ -182,33 +233,27 @@ def wndProc(hWnd, msg, wParam, lParam):
         # Создаем шрифт через ctypes, используя Windows API CreateFontW
         font_size = 25  # Установите желаемый размер шрифта в пунктах
         hfont = ctypes.windll.gdi32.CreateFontW(
-            font_size,  # высота шрифта
-            0,  # ширина (0 = автоматическая)
-            0,  # угол наклона
-            0,  # угол наклона базовой линии
-            win32con.FW_NORMAL,  # вес шрифта (толщина)
-            False,  # курсив
-            False,  # подчеркивание
-            False,  # зачеркнутый
+            font_size,      # высота шрифта
+            0,              # ширина (0 = автоматическая)
+            0,              # угол наклона
+            0,              # угол наклона базовой линии
+            win32con.FW_NORMAL,  # вес шрифта
+            False,          # курсив
+            False,          # подчеркивание
+            False,          # зачеркнутый
             win32con.ANSI_CHARSET,  # набор символов
             win32con.OUT_DEFAULT_PRECIS,  # точность вывода
-            win32con.CLIP_DEFAULT_PRECIS,  # точность обрезки
+            win32con.CLIP_DEFAULT_PRECIS, # точность обрезки
             win32con.DEFAULT_QUALITY,  # качество
             win32con.DEFAULT_PITCH | win32con.FF_DONTCARE,  # шаг и семейство
-            "Arial"  # имя шрифта
+            "Arial"         # имя шрифта
         )
 
-        # Выбираем шрифт в контекст устройства
         old_font = win32gui.SelectObject(hdc, hfont)
-
-        # Убираем DT_SINGLELINE и добавляем DT_WORDBREAK для переноса строк
         flags = win32con.DT_CENTER | win32con.DT_WORDBREAK
         win32gui.DrawText(hdc, current_message, -1, rect, flags)
-
-        # Восстанавливаем старый шрифт и удаляем созданный
         win32gui.SelectObject(hdc, old_font)
         ctypes.windll.gdi32.DeleteObject(hfont)
-
         win32gui.EndPaint(hWnd, ps)
         return 0
     elif msg == win32con.WM_DESTROY:
@@ -217,7 +262,9 @@ def wndProc(hWnd, msg, wParam, lParam):
     else:
         return win32gui.DefWindowProc(hWnd, msg, wParam, lParam)
 
+########################################
 # Функция для периодического поддержания TopMost
+########################################
 def maintain_topmost(hwnd):
     """Периодически переустанавливает окно на topmost."""
     while True:
@@ -232,7 +279,9 @@ def maintain_topmost(hwnd):
             logging.error(f"Ошибка поддержания topmost: {e}")
         time.sleep(0.1)  # каждые 100 мс
 
+########################################
 # Функция создания оверлейного окна (Win32)
+########################################
 def main_overlay():
     global overlay_hwnd
     hInstance = win32api.GetModuleHandle(None)
@@ -306,13 +355,28 @@ def hide_console():
     except Exception as e:
         logging.error(f"Ошибка при скрытии консоли: {e}")
 
+def get_windows_build():
+    version = platform.version()
+    try:
+        build = int(version.split('.')[-1])
+        return build
+    except (ValueError, IndexError):
+        return 0  # Если не удалось определить версию, возвращаем 0
+
+########################################
+# Точка входа
+########################################
 def main():
+    # Запускаем HTTP-сервер для обработки запросов от бота (локально)
     threading.Thread(target=start_server, daemon=True).start()
     hide_console()  # Скрываем консоль сразу после запуска
     create_gui()
     if not current_id:
         print("ID не задан. Выход.")
         return
+    # После установки current_id запускаем WebSocket клиент
+    threading.Thread(target=start_ws_client_thread, daemon=True).start()
+    # Запускаем оверлейное окно
     main_overlay()
 
 if __name__ == '__main__':
