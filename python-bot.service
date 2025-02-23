@@ -1,0 +1,13 @@
+[Unit]
+Description=My Python Bot
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=telegram-bot-server
+ExecStart=/usr/bin/python3 /home/admin/app/tg_bot_helper/bot.py
+WorkingDirectory=/home/admin/app/tg_bot_helper
+
+[Install]
+WantedBy=multi-user.target
