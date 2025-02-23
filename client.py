@@ -304,9 +304,13 @@ def main_overlay():
 
     while True:
         try:
-            # Добавлен флаг WS_EX_NOACTIVATE для предотвращения получения фокуса
+            # Добавляем флаги WS_EX_LAYERED и WS_EX_TRANSPARENT чтобы окно было клика-прозрачным
+            extended_style = (win32con.WS_EX_TOOLWINDOW |
+                              win32con.WS_EX_NOACTIVATE |
+                              win32con.WS_EX_LAYERED |
+                              win32con.WS_EX_TRANSPARENT)
             overlay_hwnd = win32gui.CreateWindowEx(
-                win32con.WS_EX_TOOLWINDOW | win32con.WS_EX_NOACTIVATE,
+                extended_style,
                 className,
                 "Overlay Window",
                 win32con.WS_POPUP | win32con.WS_VISIBLE,
@@ -314,6 +318,8 @@ def main_overlay():
                 screen_width, overlay_height,
                 0, 0, hInstance, None
             )
+            # Устанавливаем полную непрозрачность (можно изменить альфа-канал, если требуется)
+            win32gui.SetLayeredWindowAttributes(overlay_hwnd, 0, 255, win32con.LWA_ALPHA)
 
             win32gui.SetWindowPos(overlay_hwnd, win32con.HWND_TOPMOST,
                                   0, screen_height - overlay_height,
