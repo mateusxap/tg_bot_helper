@@ -104,10 +104,10 @@ async def ws_handler(websocket, path=None):
             await websocket.send(json.dumps({"error": "unique_id required"}))
             return
         ws_connections[unique_id] = websocket
-        logging.info(f"WebSocket клиент подключен: {unique_id}")
+        logging.info(f"Клиент подключен: {unique_id}")
         # Обработка входящих сообщений
         async for message in websocket:
-            logging.info(f"Получено сообщение от {unique_id} через WebSocket")
+            logging.info(f"Получено сообщение от {unique_id}")
             if isinstance(message, bytes):
                 # Если получены бинарные данные – считаем их ответом на запрос скриншота
                 future = screenshot_futures.get(unique_id)
@@ -119,20 +119,20 @@ async def ws_handler(websocket, path=None):
                 # Обработка текстовых сообщений (если потребуется)
                 pass
     except websockets.exceptions.ConnectionClosed:
-        logging.info("WebSocket соединение закрыто")
+        logging.info("Соединение закрыто")
     finally:
         # Удаляем соединение из словаря
         for uid, ws in list(ws_connections.items()):
             if ws == websocket:
                 del ws_connections[uid]
-                logging.info(f"WebSocket клиент отключен: {uid}")
+                logging.info(f"Клиент отключен: {uid}")
                 break
 
 
 async def start_websocket_server():
     # !!! Для удаленного сервера: при необходимости измените host и port
     ws_server = await websockets.serve(ws_handler, '0.0.0.0', 8765)
-    logging.info("WebSocket сервер запущен на 0.0.0.0:8765")
+    logging.info("Сервер запущен на 0.0.0.0:8765")
     return ws_server
 
 
@@ -176,7 +176,7 @@ async def screen(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 await update.message.reply_text("Неверный формат данных скриншота.", reply_markup=KEYBOARD)
         except Exception as e:
-            await update.message.reply_text(f'Ошибка при запросе скриншота через WebSocket: {str(e)}', reply_markup=KEYBOARD)
+            await update.message.reply_text(f'Ошибка при запросе скриншота: {str(e)}', reply_markup=KEYBOARD)
         finally:
             if unique_id in screenshot_futures:
                 del screenshot_futures[unique_id]
@@ -220,9 +220,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             command = {"action": "message", "text": text, "unique_id": unique_id}
             await ws.send(json.dumps(command))
-            await update.message.reply_text('Текст отправлен клиенту через WebSocket.', reply_markup=KEYBOARD)
+            await update.message.reply_text('Текст отправлен клиенту.', reply_markup=KEYBOARD)
         except Exception as e:
-            await update.message.reply_text(f'Ошибка при отправке текста через WebSocket: {str(e)}', reply_markup=KEYBOARD)
+            await update.message.reply_text(f'Ошибка при отправке текста: {str(e)}', reply_markup=KEYBOARD)
     else:
         client_url = client_mapping.get(unique_id)
         if not client_url:
