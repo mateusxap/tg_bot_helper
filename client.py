@@ -227,7 +227,7 @@ def wndProc(hWnd, msg, wParam, lParam):
         brush = win32gui.CreateSolidBrush(win32api.RGB(0, 0, 0))
         win32gui.FillRect(hdc, rect, brush)
         win32gui.DeleteObject(brush)
-        win32gui.SetTextColor(hdc, win32api.RGB(255, 255, 255))  # белый текст
+        win32gui.SetTextColor(hdc, win32api.RGB(169, 169, 169))  # тёмно-серый текст
         win32gui.SetBkMode(hdc, win32con.TRANSPARENT)
 
         # Создаем шрифт через ctypes, используя Windows API CreateFontW
