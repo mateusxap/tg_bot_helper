@@ -6,17 +6,15 @@ import ctypes
 from ctypes import Structure, byref, c_int
 import threading
 import socket
-import requests
 import io
 import pyautogui
 import logging
-from http.server import BaseHTTPRequestHandler, HTTPServer
 import tkinter as tk
 import time
 import platform
 import json
 import asyncio
-import websockets  # Убедитесь, что установлен модуль websockets (pip install websockets)
+import websockets
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -40,93 +38,15 @@ class MARGINS(Structure):
     ]
 
 ########################################
-# HTTP-сервер: обработчик запросов
-########################################
-class RequestHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        global current_id
-        logging.debug(f"Получен GET-запрос: {self.path}")
-        if self.path.startswith('/screenshot/'):
-            requested_id = self.path.split('/screenshot/')[1]
-            logging.debug(f"Запрошенный ID: {requested_id}, текущий ID: {current_id}")
-            if requested_id != current_id:
-                logging.warning("Недействительный ID")
-                self.send_response(403)
-                self.send_header('Content-type', 'text/plain')
-                self.end_headers()
-                self.wfile.write(b'Invalid ID')
-                return
-            try:
-                logging.debug("Захватываем скриншот")
-                screenshot = pyautogui.screenshot()
-                img_io = io.BytesIO()
-                screenshot.save(img_io, 'PNG')
-                img_io.seek(0)
-                logging.debug("Отправляем скриншот")
-                self.send_response(200)
-                self.send_header('Content-type', 'image/png')
-                self.end_headers()
-                self.wfile.write(img_io.getvalue())
-            except Exception as e:
-                logging.error(f"Ошибка при захвате скриншота: {e}")
-                self.send_response(500)
-                self.send_header('Content-type', 'text/plain')
-                self.end_headers()
-                self.wfile.write(b'Screenshot failed')
-        else:
-            self.send_response(404)
-            self.end_headers()
-
-    def do_POST(self):
-        global current_message, overlay_hwnd
-        if self.path == '/message':
-            content_length = int(self.headers.get('Content-Length', 0))
-            message = self.rfile.read(content_length).decode('utf-8')
-            message = message.replace('\n', ' ')
-            logging.debug(f"Получено сообщение: {message}")
-            current_message = message  # обновляем текст оверлея
-            if overlay_hwnd:
-                win32gui.RedrawWindow(overlay_hwnd, None, None, win32con.RDW_INVALIDATE | win32con.RDW_UPDATENOW)
-            self.send_response(200)
-            self.send_header('Content-type', 'text/plain')
-            self.end_headers()
-            self.wfile.write(b'Message received')
-        else:
-            self.send_response(404)
-            self.end_headers()
-
-def start_server():
-    # !!! При запуске на сервере: при необходимости измените IP и порт
-    server = HTTPServer(('0.0.0.0', 5000), RequestHandler)
-    logging.info("HTTP-сервер запущен на 0.0.0.0:5000")
-    server.serve_forever()
-
-########################################
 # Вспомогательные функции
 ########################################
-def get_client_url():
-    hostname = socket.gethostname()
-    local_ip = socket.gethostbyname(hostname)
-    return f'http://{local_ip}:5000'
-
-# URL регистрации у бота
-# !!! При запуске на сервере: изменить URL на публичный (например, http://<ваш_public_ip>:8000/register_client)
-BOT_REGISTRATION_URL = 'http://87.242.119.104:8000/register_client'
-
-def register_client(client_id):
-    client_url = get_client_url()
+def get_windows_build():
+    version = platform.version()
     try:
-        response = requests.post(
-            BOT_REGISTRATION_URL,
-            json={'unique_id': client_id, 'client_url': client_url},
-            timeout=5
-        )
-        if response.status_code == 200:
-            logging.info(f"ID зарегистрирован: {client_id}")
-        else:
-            logging.error(f"Ошибка регистрации: {response.text}")
-    except Exception as e:
-        logging.error(f"Регистрация не удалась: {e}")
+        build = int(version.split('.')[-1])
+        return build
+    except (ValueError, IndexError):
+        return 0  # Если не удалось определить версию, возвращаем 0
 
 ########################################
 # Интерфейс для ввода ID (Tkinter)
@@ -146,22 +66,14 @@ def create_gui():
 
     def set_id():
         global current_id
-        current_id = id_entry.get()
-        status_label.config(text=f"ID установлен: {current_id}")
-        client_url = get_client_url()
-        try:
-            response = requests.post(
-                BOT_REGISTRATION_URL,
-                json={'unique_id': current_id, 'client_url': client_url},
-                timeout=5
-            )
-            if response.status_code == 200:
-                status_label.config(text=f"ID установлен и зарегистрирован: {current_id}")
-                root.destroy()
-            else:
-                status_label.config(text=f"Ошибка регистрации: {response.text}")
-        except requests.exceptions.RequestException as e:
-            status_label.config(text=f"Не удалось зарегистрироваться: {e}")
+        input_id = id_entry.get().strip()
+        if input_id:
+            current_id = input_id
+            status_label.config(text=f"ID установлен: {current_id}")
+            # ID установлен, закрываем окно
+            root.destroy()
+        else:
+            status_label.config(text="Ошибка: ID не может быть пустым")
 
     tk.Button(root, text="Подключиться", command=set_id).pack(pady=5)
     root.mainloop()
@@ -363,20 +275,10 @@ def hide_console():
     except Exception as e:
         logging.error(f"Ошибка при скрытии консоли: {e}")
 
-def get_windows_build():
-    version = platform.version()
-    try:
-        build = int(version.split('.')[-1])
-        return build
-    except (ValueError, IndexError):
-        return 0  # Если не удалось определить версию, возвращаем 0
-
 ########################################
 # Точка входа
 ########################################
 def main():
-    # Запускаем HTTP-сервер для обработки запросов от бота (локально)
-    threading.Thread(target=start_server, daemon=True).start()
     hide_console()  # Скрываем консоль сразу после запуска
     create_gui()
     if not current_id:

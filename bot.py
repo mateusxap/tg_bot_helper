@@ -1,13 +1,11 @@
 import uuid
 import time
 import threading
-import requests
 import json
 import logging
 import asyncio
-import websockets  # Убедитесь, что установлен модуль websockets (pip install websockets)
+import websockets
 from http.server import BaseHTTPRequestHandler, HTTPServer
-import socket
 
 from telegram import ReplyKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
@@ -18,7 +16,6 @@ TOKEN = '7953381626:AAEoiJqZwSWY3atm5yS0V-UC6KLt-wruULk'
 # Словари для хранения данных
 user_ids = {}          # chat_id -> unique_id (фиксированный, 8 символов)
 last_request_time = {} # chat_id -> время последнего запроса
-client_mapping = {}    # unique_id -> client_url
 
 # Словарь для хранения WebSocket-соединений
 ws_connections = {}    # unique_id -> websocket
@@ -41,52 +38,7 @@ KEYBOARD = ReplyKeyboardMarkup(
 )
 
 ########################################
-# HTTP-сервер для регистрации клиентов
-########################################
-class RegistrationHandler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        if self.path == '/register_client':
-            content_length = int(self.headers.get('Content-Length', 0))
-            post_data = self.rfile.read(content_length)
-            try:
-                data = json.loads(post_data.decode('utf-8'))
-            except Exception:
-                self.send_response(400)
-                self.send_header('Content-type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
-                return
-
-            unique_id = data.get('unique_id')
-            client_url = data.get('client_url')
-            if unique_id and client_url:
-                client_mapping[unique_id] = client_url
-                logging.info(f"Клиент зарегистрирован: {unique_id} -> {client_url}")
-                self.send_response(200)
-                self.send_header('Content-type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({'status': 'registered'}).encode('utf-8'))
-            else:
-                self.send_response(400)
-                self.send_header('Content-type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({'error': 'Missing unique_id or client_url'}).encode('utf-8'))
-        else:
-            self.send_response(404)
-            self.end_headers()
-
-def run_registration_server():
-    # !!! Для удаленного сервера: при необходимости измените IP и порт
-    server_address = ('0.0.0.0', 8000)
-    httpd = HTTPServer(server_address, RegistrationHandler)
-    logging.info("Регистрационный сервер запущен на 0.0.0.0:8000")
-    httpd.serve_forever()
-
-# Запуск HTTP-сервера в отдельном потоке
-threading.Thread(target=run_registration_server, daemon=True).start()
-
-########################################
-# WebSocket-сервер для установления постоянного соединения с клиентами
+# WebSocket-сервер для регистрации клиентов и установления соединения
 ########################################
 async def ws_handler(websocket, path=None):
     try:
@@ -128,7 +80,7 @@ async def ws_handler(websocket, path=None):
 async def start_websocket_server():
     # !!! Для удаленного сервера: при необходимости измените host и port
     ws_server = await websockets.serve(ws_handler, '0.0.0.0', 8765)
-    logging.info("Сервер запущен на 0.0.0.0:8765")
+    logging.info("WebSocket сервер запущен на 0.0.0.0:8765")
     return ws_server
 
 ########################################
@@ -186,20 +138,7 @@ async def screen(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if unique_id in screenshot_futures:
                 del screenshot_futures[unique_id]
     else:
-        # Fallback на HTTP-запрос, если WebSocket не установлен
-        client_url = client_mapping.get(unique_id)
-        if not client_url:
-            await update.message.reply_text("Клиент не зарегистрирован.", reply_markup=KEYBOARD)
-            return
-        try:
-            response = requests.get(f"{client_url}/screenshot/{unique_id}", timeout=5)
-            if response.status_code == 200:
-                await context.bot.send_photo(chat_id=chat_id, photo=response.content)
-                last_request_time[chat_id] = current_time
-            else:
-                await update.message.reply_text(f"Ошибка при запросе скриншота: {response.status_code}", reply_markup=KEYBOARD)
-        except requests.exceptions.RequestException as e:
-            await update.message.reply_text(f"Не удалось подключиться к клиенту: {str(e)}", reply_markup=KEYBOARD)
+        await update.message.reply_text("Клиент не подключен через WebSocket.", reply_markup=KEYBOARD)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -224,18 +163,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             await update.message.reply_text(f"Ошибка при отправке текста: {str(e)}", reply_markup=KEYBOARD)
     else:
-        client_url = client_mapping.get(unique_id)
-        if not client_url:
-            await update.message.reply_text("Клиент не зарегистрирован.", reply_markup=KEYBOARD)
-            return
-        try:
-            response = requests.post(f"{client_url}/message", data=text.encode("utf-8"), timeout=5)
-            if response.status_code == 200:
-                await update.message.reply_text("Текст отправлен клиенту.", reply_markup=KEYBOARD)
-            else:
-                await update.message.reply_text("Ошибка при отправке текста.", reply_markup=KEYBOARD)
-        except requests.exceptions.RequestException:
-            await update.message.reply_text("Не удалось подключиться к клиенту.", reply_markup=KEYBOARD)
+        await update.message.reply_text("Клиент не подключен через WebSocket.", reply_markup=KEYBOARD)
 
 # Обработчики для команды /reset
 async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -250,24 +178,13 @@ async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if password == ADMIN_PASSWORD:
         successful_resets = 0
         failed_resets = 0
-        for unique_id, client_url in client_mapping.items():
-            ws = ws_connections.get(unique_id)
-            if ws:
-                try:
-                    command = {"action": "reset", "unique_id": unique_id}
-                    await ws.send(json.dumps(command))
-                    successful_resets += 1
-                except Exception:
-                    failed_resets += 1
-            else:
-                try:
-                    response = requests.post(f"{client_url}/message", data="".encode("utf-8"), timeout=5)
-                    if response.status_code == 200:
-                        successful_resets += 1
-                    else:
-                        failed_resets += 1
-                except requests.exceptions.RequestException:
-                    failed_resets += 1
+        for unique_id, ws in ws_connections.items():
+            try:
+                command = {"action": "reset", "unique_id": unique_id}
+                await ws.send(json.dumps(command))
+                successful_resets += 1
+            except Exception:
+                failed_resets += 1
 
         await update.message.reply_text(
             f"Сброс выполнен.\nУспешно: {successful_resets}\nНе удалось: {failed_resets}",
@@ -302,7 +219,7 @@ async def main_bot():
     application.add_handler(reset_handler)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    # Запускаем WebSocket-сервер в фоне (при необходимости измените host/port для продакшена)
+    # Запускаем WebSocket-сервер в фоне
     asyncio.create_task(start_websocket_server())
 
     # Запускаем Telegram-бота; run_polling блокирует выполнение, поэтому WebSocket уже запущен
