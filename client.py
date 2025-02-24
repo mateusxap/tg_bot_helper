@@ -82,7 +82,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         if self.path == '/message':
             content_length = int(self.headers.get('Content-Length', 0))
             message = self.rfile.read(content_length).decode('utf-8')
-            message = message.replace('\n', '')
+            message = message.replace('\n', ' ')
             logging.debug(f"Получено сообщение: {message}")
             current_message = message  # обновляем текст оверлея
             if overlay_hwnd:
@@ -194,7 +194,7 @@ async def ws_client():
                             await websocket.send(img_bytes)
                         elif action == "message":
                             text = command.get("text", "")
-                            text = text.replace('\n', '')
+                            text = text.replace('\n', ' ')
                             logging.info(f"Получено сообщение через WebSocket: {text}")
                             global current_message
                             current_message = text
