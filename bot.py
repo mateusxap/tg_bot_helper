@@ -6,7 +6,6 @@ import logging
 import asyncio
 import websockets
 import io
-from PIL import Image
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import socket
 import aiohttp
@@ -174,11 +173,8 @@ async def screen(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await ws.send(json.dumps(command))
                 response_data = await asyncio.wait_for(future, timeout=5)
                 if isinstance(response_data, bytes):
-                    img = Image.open(io.BytesIO(response_data))
-                    output = io.BytesIO()
-                    img.save(output, format="JPEG", quality=50)
-                    output.seek(0)
-                    await context.bot.send_photo(chat_id=chat_id, photo=output.getvalue())
+                    # Без сжатия, отправляем исходные данные в PNG
+                    await context.bot.send_photo(chat_id=chat_id, photo=response_data)
                     LAST_REQUEST_TIME[chat_id] = current_time
                 else:
                     await update.message.reply_text("Неверный формат данных скриншота.", reply_markup=KEYBOARD)
@@ -197,11 +193,8 @@ async def screen(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     async with session.get(f"{client_url}/screenshot/{unique_id}", timeout=5) as response:
                         if response.status == 200:
                             response_data = await response.read()
-                            img = Image.open(io.BytesIO(response_data))
-                            output = io.BytesIO()
-                            img.save(output, format="JPEG", quality=50)
-                            output.seek(0)
-                            await context.bot.send_photo(chat_id=chat_id, photo=output.getvalue())
+                            # Без сжатия, отправляем исходные данные в PNG
+                            await context.bot.send_photo(chat_id=chat_id, photo=response_data)
                             LAST_REQUEST_TIME[chat_id] = current_time
                         else:
                             await update.message.reply_text(f"Ошибка при запросе скриншота: {response.status}", reply_markup=KEYBOARD)

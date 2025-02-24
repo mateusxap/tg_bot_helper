@@ -10,7 +10,7 @@ import requests
 import io
 import pyautogui
 import logging
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer  # Изменено на ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import tkinter as tk
 import time
 import platform
@@ -18,7 +18,7 @@ import json
 import asyncio
 import websockets
 
-# Уровень логирования изменен на INFO для снижения нагрузки
+# Уровень логирования INFO для снижения нагрузки
 logging.basicConfig(level=logging.INFO)
 
 # Глобальные переменные
@@ -69,7 +69,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 else:
                     logging.info("Используем кэшированный скриншот")
                 img_io = io.BytesIO()
-                last_screenshot.save(img_io, 'PNG', optimize=True, compress_level=9)  # Сжатие изображения
+                last_screenshot.save(img_io, 'PNG')  # Без сжатия
                 img_io.seek(0)
                 self.send_response(200)
                 self.send_header('Content-type', 'image/png')
@@ -190,7 +190,7 @@ async def ws_client():
                             logging.info("Получена команда на скриншот через WebSocket.")
                             screenshot = pyautogui.screenshot()
                             img_io = io.BytesIO()
-                            screenshot.save(img_io, format="PNG", optimize=True, compress_level=9)
+                            screenshot.save(img_io, format="PNG")  # Без сжатия
                             img_bytes = img_io.getvalue()
                             await websocket.send(img_bytes)
                         elif action == "message":
